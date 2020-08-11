@@ -37,9 +37,9 @@ class MainActivity : AppCompatActivity(), View.OnClickListener {
 
     private val countDownTick = object: BroadcastReceiver(){
         override fun onReceive(p0: Context?, p1: Intent?) {
-            val currentTimeInMillis = p1?.extras?.getLong("currentTime")
-            //println("Tick: $currentTimeInMillis")
-            etTime.setText(currentTimeInMillis.toString())
+            p1?.extras?.getLong("currentTime")?.let{currentTimeInMillis ->
+                etTime.setText(TimerUtils.formatMillisToTimeString(currentTimeInMillis))
+            }
         }
     }
 
