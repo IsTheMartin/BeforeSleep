@@ -10,20 +10,26 @@ import android.content.Intent
 import android.os.Build
 import android.os.CountDownTimer
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import me.ismartin.beforesleep.MainApplication
+import me.ismartin.beforesleep.hardware.BluetoothActions
+import me.ismartin.beforesleep.hardware.WiFiActions
 import me.ismartin.beforesleep.utils.Constants.CHANNEL_ID
 import me.ismartin.beforesleep.utils.Constants.COUNT_DOWN_FINISHED_BROADCAST
 import me.ismartin.beforesleep.utils.Constants.COUNT_DOWN_TICK_BROADCAST
 import me.ismartin.beforesleep.utils.Constants.NOTIFICATION_ID
 import me.ismartin.beforesleep.utils.Constants.TIME_INTERVAL
+import me.ismartin.beforesleep.utils.PreferencesManager
+import me.ismartin.beforesleep.utils.PreferencesManager.DEACTIVATE_BLUETOOTH
+import me.ismartin.beforesleep.utils.PreferencesManager.DEACTIVATE_WIFI
 import me.ismartin.beforesleep.utils.TimerUtils
 
 
-const val TAG = "TimerService"
-
 class TimerService : Service() {
 
-    var countDownTimer: CountDownTimer? = null
+    private val TAG = "TimerService"
+    private var countDownTimer: CountDownTimer? = null
 
     override fun onBind(intent: Intent): IBinder? {
         return null
@@ -39,8 +45,7 @@ class TimerService : Service() {
         intent?.extras?.getLong("alarmTime")?.let {
             countDownTimer = object : CountDownTimer(it, TIME_INTERVAL) {
                 override fun onFinish() {
-                    sendBroadcast(Intent(COUNT_DOWN_FINISHED_BROADCAST))
-                    stopForeground(true)
+                    finishService()
                 }
 
                 override fun onTick(p0: Long) {
@@ -49,21 +54,15 @@ class TimerService : Service() {
                     notification = createNotification(timerString)
                     notificationManager.notify(NOTIFICATION_ID, notification)
 
-                    sendBroadcast(Intent(COUNT_DOWN_TICK_BROADCAST).let{ broadcastIntent ->
+                    sendBroadcast(Intent(COUNT_DOWN_TICK_BROADCAST).let { broadcastIntent ->
                         broadcastIntent.putExtra("currentTime", p0)
                     })
                 }
             }.start()
-
             startForeground(NOTIFICATION_ID, notification)
         }
 
-
         return super.onStartCommand(intent, flags, startId)
-    }
-
-    override fun onCreate() {
-        super.onCreate()
     }
 
     override fun onDestroy() {
@@ -73,13 +72,13 @@ class TimerService : Service() {
 
     private fun createNotificationChannel(notificationManager: NotificationManager) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            notificationManager.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID,
-                    "Foreground Service Channel",
-                    NotificationManager.IMPORTANCE_DEFAULT
-                )
+            val notificationChannel = NotificationChannel(
+                CHANNEL_ID,
+                "Foreground Service Channel",
+                NotificationManager.IMPORTANCE_DEFAULT
             )
+            notificationChannel.setSound(null, null)
+            notificationManager.createNotificationChannel(notificationChannel)
         }
     }
 
@@ -89,7 +88,36 @@ class TimerService : Service() {
             .setContentTitle("Before Sleep")
             .setContentText(timerString)
             .setAutoCancel(true)
+            .setSound(null)
             .build()
+    }
+
+    private fun finishService() {
+        sendBroadcast(Intent(COUNT_DOWN_FINISHED_BROADCAST))
+        deactivateHardware()
+        stopForeground(true)
+    }
+
+    private fun deactivateHardware() {
+        Log.i(TAG, "deactivateHardware")
+        MainApplication.appContext?.let { context ->
+            PreferencesManager.read(DEACTIVATE_WIFI, false)?.let {
+                if (it) {
+                    WiFiActions(context).let { wifiActions ->
+                        if (wifiActions.isWiFiActive())
+                            wifiActions.turnOffWiFi()
+                    }
+                }
+            }
+            PreferencesManager.read(DEACTIVATE_BLUETOOTH, false)?.let {
+                if (it) {
+                    BluetoothActions(context).let { bluetoothActions ->
+                        if (bluetoothActions.isBluetoothEnabled())
+                            bluetoothActions.turnOffBluetooth()
+                    }
+                }
+            }
+        }
     }
 
     companion object {

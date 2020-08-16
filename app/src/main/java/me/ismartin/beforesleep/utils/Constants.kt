@@ -8,4 +8,6 @@ object Constants {
     const val COUNT_DOWN_TICK_BROADCAST = "me.ismartin.beforesleep.countdowntick"
     const val COUNT_DOWN_FINISHED_BROADCAST = "me.ismartin.beforesleep.countdownfinished"
 
+    const val TIMER_RUNNING = "timer_running"
+    const val TIMER_STOPPED = "timer_stopped"
 }
