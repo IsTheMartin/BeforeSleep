@@ -10,4 +10,8 @@ object Constants {
 
     const val TIMER_RUNNING = "timer_running"
     const val TIMER_STOPPED = "timer_stopped"
+
+    const val MIN_TIMER_VALUE = 1000L * 60L
+    const val MAX_TIMER_VALUE = 1000L * 60L * 60L * 2L
+
 }

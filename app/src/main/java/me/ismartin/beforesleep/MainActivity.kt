@@ -5,11 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.text.InputFilter
 import android.view.View
 import android.widget.CompoundButton
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Observer
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import kotlinx.android.synthetic.main.activity_main.*
 import me.ismartin.beforesleep.hardware.BluetoothActions
@@ -17,13 +18,14 @@ import me.ismartin.beforesleep.hardware.WiFiActions
 import me.ismartin.beforesleep.services.TimerService
 import me.ismartin.beforesleep.utils.Constants.COUNT_DOWN_FINISHED_BROADCAST
 import me.ismartin.beforesleep.utils.Constants.COUNT_DOWN_TICK_BROADCAST
+import me.ismartin.beforesleep.utils.Constants.MAX_TIMER_VALUE
+import me.ismartin.beforesleep.utils.Constants.MIN_TIMER_VALUE
 import me.ismartin.beforesleep.utils.Constants.TIMER_RUNNING
 import me.ismartin.beforesleep.utils.Constants.TIMER_STOPPED
-import me.ismartin.beforesleep.utils.PreferencesManager
-import me.ismartin.beforesleep.utils.PreferencesManager.DEACTIVATE_BLUETOOTH
-import me.ismartin.beforesleep.utils.PreferencesManager.DEACTIVATE_WIFI
+import me.ismartin.beforesleep.utils.HelperUtils
 import me.ismartin.beforesleep.utils.TimerUtils
 import me.ismartin.beforesleep.viewmodel.MainViewModel
+
 
 class MainActivity : AppCompatActivity(), View.OnClickListener,
     CompoundButton.OnCheckedChangeListener {
@@ -35,10 +37,13 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         mainViewModel = ViewModelProvider(this).get(MainViewModel::class.java)
+
         registerViewModelObserver()
         setListeners()
+
         loadHardwareValuesFromPreferences()
         verifyIfHardwareCanBeTurnedOff()
+        checkIfServiceIsRunning()
     }
 
     override fun onStart() {
@@ -73,12 +78,27 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
     }
 
     private fun startTimer() {
-        val milliseconds = TimerUtils.convertStringToMillis(etTime.text.toString())
-        TimerService.start(this, milliseconds)
+        if (etTime.text.isNotEmpty()) {
+            val milliseconds = TimerUtils.convertStringToMillis(etTime.text.toString())
+            if (milliseconds < MIN_TIMER_VALUE)
+                Toast.makeText(this, getString(R.string.min_time_message), Toast.LENGTH_SHORT)
+                    .show()
+            else if (milliseconds > MAX_TIMER_VALUE)
+                Toast.makeText(this, getString(R.string.max_time_message), Toast.LENGTH_SHORT)
+                    .show()
+            else {
+                TimerService.start(this, milliseconds)
+                etTime.filters = arrayOf(InputFilter.LengthFilter(10))
+            }
+
+        } else {
+            Toast.makeText(this, getString(R.string.empty_time), Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun stopTimer() {
         TimerService.stop(this)
+        mainViewModel.setTimerState(TIMER_STOPPED)
     }
 
     private val countDownTick = object : BroadcastReceiver() {
@@ -117,8 +137,8 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
     override fun onCheckedChanged(button: CompoundButton?, p1: Boolean) {
         button?.let {
             when (it.id) {
-                chkWiFi.id -> PreferencesManager.write(DEACTIVATE_WIFI, it.isChecked)
-                chkBluetooth.id -> PreferencesManager.write(DEACTIVATE_BLUETOOTH, it.isChecked)
+                chkWiFi.id -> mainViewModel.turnOffWiFi(it.isChecked)
+                chkBluetooth.id -> mainViewModel.turnOffBluetooth(it.isChecked)
             }
         }
     }
@@ -131,15 +151,16 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
         }
     }
 
-    private fun setUiOnRunningTimer(){
+    private fun setUiOnRunningTimer() {
         btnActionTimer.text = getString(R.string.stop_timer)
         etTime.isEnabled = false
     }
 
-    private fun setUiOnStoppedTimer(){
+    private fun setUiOnStoppedTimer() {
         btnActionTimer.text = getString(R.string.start_timer)
         etTime.isEnabled = true
         etTime.setText("")
+        etTime.filters = arrayOf(InputFilter.LengthFilter(3))
     }
 
     private fun verifyIfHardwareCanBeTurnedOff() {
@@ -155,12 +176,20 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
         }
     }
 
-    private fun loadHardwareValuesFromPreferences(){
-        PreferencesManager.read(DEACTIVATE_WIFI, false)?.let {
+    private fun loadHardwareValuesFromPreferences() {
+        mainViewModel.isTurnOffWiFi()?.let {
             chkWiFi.isChecked = it
         }
-        PreferencesManager.read(DEACTIVATE_BLUETOOTH, false)?.let {
+        mainViewModel.isTurnOffBluetooth()?.let {
             chkBluetooth.isChecked = it
+        }
+    }
+
+    private fun checkIfServiceIsRunning() {
+        if (!HelperUtils.isMyServiceRunning(this, TimerService::class.java)) {
+            setUiOnStoppedTimer()
+        } else {
+            setUiOnRunningTimer()
         }
     }
 

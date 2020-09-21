@@ -1,10 +1,7 @@
 package me.ismartin.beforesleep.services
 
-import android.R
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
+import android.app.*
+import me.ismartin.beforesleep.R
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -25,7 +22,6 @@ import me.ismartin.beforesleep.utils.PreferencesManager.DEACTIVATE_BLUETOOTH
 import me.ismartin.beforesleep.utils.PreferencesManager.DEACTIVATE_WIFI
 import me.ismartin.beforesleep.utils.TimerUtils
 
-
 class TimerService : Service() {
 
     private val TAG = "TimerService"
@@ -36,30 +32,36 @@ class TimerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        var timerString = "00:00"
         val notificationManager =
             getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        createNotificationChannel(notificationManager)
-        var notification = createNotification(timerString)
+        if(intent?.action == "Stop_Service"){
+            sendBroadcast(Intent(COUNT_DOWN_FINISHED_BROADCAST))
+            stopForeground(true)
+        } else {
+            var timerString = "00:00"
 
-        intent?.extras?.getLong("alarmTime")?.let {
-            countDownTimer = object : CountDownTimer(it, TIME_INTERVAL) {
-                override fun onFinish() {
-                    finishService()
-                }
+            createNotificationChannel(notificationManager)
+            var notification = createNotification(timerString)
 
-                override fun onTick(p0: Long) {
-                    timerString = TimerUtils.formatMillisToTimeString(p0)
+            intent?.extras?.getLong("alarmTime")?.let {
+                countDownTimer = object : CountDownTimer(it, TIME_INTERVAL) {
+                    override fun onFinish() {
+                        finishService()
+                    }
 
-                    notification = createNotification(timerString)
-                    notificationManager.notify(NOTIFICATION_ID, notification)
+                    override fun onTick(p0: Long) {
+                        timerString = TimerUtils.formatMillisToTimeString(p0)
 
-                    sendBroadcast(Intent(COUNT_DOWN_TICK_BROADCAST).let { broadcastIntent ->
-                        broadcastIntent.putExtra("currentTime", p0)
-                    })
-                }
-            }.start()
-            startForeground(NOTIFICATION_ID, notification)
+                        notification = createNotification(timerString)
+                        notificationManager.notify(NOTIFICATION_ID, notification)
+
+                        sendBroadcast(Intent(COUNT_DOWN_TICK_BROADCAST).let { broadcastIntent ->
+                            broadcastIntent.putExtra("currentTime", p0)
+                        })
+                    }
+                }.start()
+                startForeground(NOTIFICATION_ID, notification)
+            }
         }
 
         return super.onStartCommand(intent, flags, startId)
@@ -83,12 +85,16 @@ class TimerService : Service() {
     }
 
     private fun createNotification(timerString: String): Notification {
+        val stopSelfIntent = Intent(this, TimerService::class.java)
+        stopSelfIntent.setAction("Stop_Service")
+        val stopSelfPendingIntent = PendingIntent.getService(this, 0, stopSelfIntent, PendingIntent.FLAG_CANCEL_CURRENT)
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.alert_dark_frame)
             .setContentTitle("Before Sleep")
             .setContentText(timerString)
+            .setSmallIcon(R.drawable.ic_logo_notification)
             .setAutoCancel(true)
             .setSound(null)
+            .addAction(R.drawable.ic_logo_notification, "Stop", stopSelfPendingIntent)
             .build()
     }
 

@@ -5,4 +5,8 @@
 
     <string name="turnoff_wifi">Turn off wifi</string>
     <string name="turnoff_bluetooth">Turn off bluetooth</string>
+
+    <string name="min_time_message">Timer must be greater than 2 minutes</string>
+    <string name="max_time_message">Timer must be lower than 120 minutes</string>
+    <string name="empty_time">Timer must have a numeric value</string>
 </resources>
