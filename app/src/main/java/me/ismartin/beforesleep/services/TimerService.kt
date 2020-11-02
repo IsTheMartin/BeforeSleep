@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import me.ismartin.beforesleep.MainApplication
 import me.ismartin.beforesleep.hardware.BluetoothActions
+import me.ismartin.beforesleep.hardware.ScreenActions
 import me.ismartin.beforesleep.hardware.WiFiActions
 import me.ismartin.beforesleep.utils.Constants.CHANNEL_ID
 import me.ismartin.beforesleep.utils.Constants.COUNT_DOWN_FINISHED_BROADCAST
@@ -19,6 +20,7 @@ import me.ismartin.beforesleep.utils.Constants.NOTIFICATION_ID
 import me.ismartin.beforesleep.utils.Constants.TIME_INTERVAL
 import me.ismartin.beforesleep.utils.PreferencesManager
 import me.ismartin.beforesleep.utils.PreferencesManager.DEACTIVATE_BLUETOOTH
+import me.ismartin.beforesleep.utils.PreferencesManager.DEACTIVATE_SCREEN
 import me.ismartin.beforesleep.utils.PreferencesManager.DEACTIVATE_WIFI
 import me.ismartin.beforesleep.utils.TimerUtils
 
@@ -120,6 +122,14 @@ class TimerService : Service() {
                     BluetoothActions(context).let { bluetoothActions ->
                         if (bluetoothActions.isBluetoothEnabled())
                             bluetoothActions.turnOffBluetooth()
+                    }
+                }
+            }
+            PreferencesManager.read(DEACTIVATE_SCREEN, false)?.let {
+                if(it) {
+                    ScreenActions(context).let { screenActions->
+                        if(screenActions.isDeviceAdmin())
+                            screenActions.turnOffScreen()
                     }
                 }
             }

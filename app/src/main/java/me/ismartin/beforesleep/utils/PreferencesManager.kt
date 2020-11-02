@@ -11,6 +11,7 @@ object PreferencesManager {
 
     const val DEACTIVATE_WIFI = "wifi"
     const val DEACTIVATE_BLUETOOTH = "bluetooth"
+    const val DEACTIVATE_SCREEN = "screen"
 
     fun init(context: Context) {
         prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

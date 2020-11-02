@@ -1,9 +1,7 @@
 package me.ismartin.beforesleep
 
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.app.admin.DevicePolicyManager
+import android.content.*
 import android.os.Bundle
 import android.text.InputFilter
 import android.view.View
@@ -13,6 +11,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProvider
 import kotlinx.android.synthetic.main.activity_main.*
+import me.ismartin.beforesleep.administration.DeviceAdmin
 import me.ismartin.beforesleep.hardware.BluetoothActions
 import me.ismartin.beforesleep.hardware.WiFiActions
 import me.ismartin.beforesleep.services.TimerService
@@ -32,23 +31,30 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
 
     private val TAG = "MainActivity"
     private lateinit var mainViewModel: MainViewModel
+    private lateinit var localComponentName: ComponentName
+    private lateinit var devicePolicyManager: DevicePolicyManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        localComponentName = ComponentName(this@MainActivity, DeviceAdmin::class.java)
         mainViewModel = ViewModelProvider(this).get(MainViewModel::class.java)
+        devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
 
         registerViewModelObserver()
         setListeners()
-
-        loadHardwareValuesFromPreferences()
-        verifyIfHardwareCanBeTurnedOff()
-        checkIfServiceIsRunning()
     }
 
     override fun onStart() {
         super.onStart()
         registerReceivers()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        loadHardwareValuesFromPreferences()
+        verifyIfHardwareCanBeTurnedOff()
+        checkIfServiceIsRunning()
     }
 
     override fun onStop() {
@@ -75,6 +81,7 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
         btnActionTimer.setOnClickListener(this)
         chkWiFi.setOnCheckedChangeListener(this)
         chkBluetooth.setOnCheckedChangeListener(this)
+        chkScreen.setOnCheckedChangeListener(this)
     }
 
     private fun startTimer() {
@@ -139,6 +146,14 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
             when (it.id) {
                 chkWiFi.id -> mainViewModel.turnOffWiFi(it.isChecked)
                 chkBluetooth.id -> mainViewModel.turnOffBluetooth(it.isChecked)
+                chkScreen.id -> {
+                    if (chkScreen.isChecked && !devicePolicyManager.isAdminActive(localComponentName))
+                        openDeviceAdminPermission()
+                    else if (chkScreen.isChecked && devicePolicyManager.isAdminActive(localComponentName))
+                        mainViewModel.turnOffScreen(it.isChecked)
+                    else
+                        mainViewModel.turnOffScreen(it.isChecked)
+                }
             }
         }
     }
@@ -183,6 +198,20 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
         mainViewModel.isTurnOffBluetooth()?.let {
             chkBluetooth.isChecked = it
         }
+        mainViewModel.isTurnOffScreen()?.let {
+            chkScreen.isChecked = it
+        }
+    }
+
+    private fun openDeviceAdminPermission() {
+        val deviceAdminIntent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, localComponentName)
+            putExtra(
+                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
+                "Hi! we need this permission for turn off your screen"
+            )
+        }
+        startActivityForResult(deviceAdminIntent, 7001)
     }
 
     private fun checkIfServiceIsRunning() {
