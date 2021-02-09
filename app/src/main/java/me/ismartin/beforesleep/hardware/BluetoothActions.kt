@@ -2,31 +2,28 @@ package me.ismartin.beforesleep.hardware
 
 import android.bluetooth.BluetoothAdapter
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
-
-class BluetoothActions(
-    context: Context
-) {
-    private val TAG = "BTActions"
-    private val mContext = context
-
+@Singleton
+class BluetoothActions @Inject constructor() {
     fun hasBluetooth(): Boolean {
-        BluetoothAdapter.getDefaultAdapter() ?: return false
+        BluetoothAdapter.getDefaultAdapter()?: return false
         return true
     }
 
     fun isBluetoothEnabled(): Boolean {
         val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-        bluetoothAdapter?.let {
-            return it.isEnabled
-        }
-        return true
+        return bluetoothAdapter?.isEnabled?: false
     }
 
     fun turnOffBluetooth() {
         val bluetoothAdapter = BluetoothAdapter.getDefaultAdapter()
-        bluetoothAdapter?.let{
-            it.disable()
-        }
+        bluetoothAdapter?.disable()
+    }
+
+    companion object {
+        private const val TAG = "Bluetooth"
     }
 }

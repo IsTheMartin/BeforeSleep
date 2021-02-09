@@ -9,58 +9,70 @@ import android.os.CountDownTimer
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import me.ismartin.beforesleep.MainApplication
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.*
+import me.ismartin.beforesleep.data.repositories.PreferencesRepository
 import me.ismartin.beforesleep.hardware.BluetoothActions
 import me.ismartin.beforesleep.hardware.WiFiActions
-import me.ismartin.beforesleep.utils.Constants.CHANNEL_ID
-import me.ismartin.beforesleep.utils.Constants.COUNT_DOWN_FINISHED_BROADCAST
-import me.ismartin.beforesleep.utils.Constants.COUNT_DOWN_TICK_BROADCAST
-import me.ismartin.beforesleep.utils.Constants.NOTIFICATION_ID
-import me.ismartin.beforesleep.utils.Constants.TIME_INTERVAL
-import me.ismartin.beforesleep.utils.PreferencesManager
-import me.ismartin.beforesleep.utils.PreferencesManager.DEACTIVATE_BLUETOOTH
-import me.ismartin.beforesleep.utils.PreferencesManager.DEACTIVATE_WIFI
+import me.ismartin.beforesleep.utils.Constants
 import me.ismartin.beforesleep.utils.TimerUtils
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class TimerService : Service() {
 
-    private val TAG = "TimerService"
+    @Inject
+    lateinit var wifi: WiFiActions
+
+    @Inject
+    lateinit var bluetooth: BluetoothActions
+
+    @Inject
+    lateinit var preferences: PreferencesRepository
+
     private var countDownTimer: CountDownTimer? = null
+    private lateinit var notificationManager: NotificationManager
+    private lateinit var context: Context
 
     override fun onBind(intent: Intent): IBinder? {
         return null
     }
 
+    override fun onCreate() {
+        super.onCreate()
+        context = this
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notificationManager =
-            getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if(intent?.action == "Stop_Service"){
-            sendBroadcast(Intent(COUNT_DOWN_FINISHED_BROADCAST))
+        if (intent?.action == "Stop_Service") {
+            sendBroadcast(Intent(Constants.COUNT_DOWN_FINISHED_BROADCAST))
             stopForeground(true)
         } else {
-            var timerString = "00:00"
+            var timerString = TIMER_INIT_STRING
 
             createNotificationChannel(notificationManager)
             var notification = createNotification(timerString)
 
             intent?.extras?.getLong("alarmTime")?.let {
-                countDownTimer = object : CountDownTimer(it, TIME_INTERVAL) {
+                countDownTimer = object : CountDownTimer(it, Constants.TIME_INTERVAL) {
                     override fun onFinish() {
                         finishService()
                     }
 
-                    override fun onTick(p0: Long) {
-                        timerString = TimerUtils.formatMillisToTimeString(p0)
+                    override fun onTick(tick: Long) {
+                        timerString = TimerUtils.formatMillisToTimeString(tick)
 
                         notification = createNotification(timerString)
-                        notificationManager.notify(NOTIFICATION_ID, notification)
+                        notificationManager.notify(Constants.NOTIFICATION_ID, notification.build())
 
-                        sendBroadcast(Intent(COUNT_DOWN_TICK_BROADCAST).let { broadcastIntent ->
-                            broadcastIntent.putExtra("currentTime", p0)
-                        })
+                        sendBroadcast(
+                            Intent(Constants.COUNT_DOWN_TICK_BROADCAST)
+                                .putExtra("currentTime", tick)
+                        )
                     }
                 }.start()
-                startForeground(NOTIFICATION_ID, notification)
+                startForeground(Constants.NOTIFICATION_ID, notification.build())
             }
         }
 
@@ -75,7 +87,7 @@ class TimerService : Service() {
     private fun createNotificationChannel(notificationManager: NotificationManager) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val notificationChannel = NotificationChannel(
-                CHANNEL_ID,
+                Constants.CHANNEL_ID,
                 "Foreground Service Channel",
                 NotificationManager.IMPORTANCE_DEFAULT
             )
@@ -84,45 +96,45 @@ class TimerService : Service() {
         }
     }
 
-    private fun createNotification(timerString: String): Notification {
-        val stopSelfIntent = Intent(this, TimerService::class.java)
-        stopSelfIntent.setAction("Stop_Service")
-        val stopSelfPendingIntent = PendingIntent.getService(this, 0, stopSelfIntent, PendingIntent.FLAG_CANCEL_CURRENT)
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Before Sleep")
+    private fun createNotification(timerString: String): NotificationCompat.Builder {
+        val stopSelfIntent = Intent(context, TimerService::class.java).apply {
+            action = "Stop_Service"
+        }
+        val stopSelfPendingIntent = PendingIntent.getService(
+            context,
+            0,
+            stopSelfIntent,
+            PendingIntent.FLAG_CANCEL_CURRENT
+        )
+
+        return NotificationCompat.Builder(context, Constants.CHANNEL_ID)
+            .setContentTitle(getString(R.string.app_name))
             .setContentText(timerString)
             .setSmallIcon(R.drawable.ic_logo_notification)
-            .setAutoCancel(true)
             .setSound(null)
             .addAction(R.drawable.ic_logo_notification, "Stop", stopSelfPendingIntent)
-            .build()
     }
 
     private fun finishService() {
-        sendBroadcast(Intent(COUNT_DOWN_FINISHED_BROADCAST))
+        sendBroadcast(Intent(Constants.COUNT_DOWN_FINISHED_BROADCAST))
         deactivateHardware()
         stopForeground(true)
     }
 
     private fun deactivateHardware() {
-        Log.i(TAG, "deactivateHardware")
-        MainApplication.appContext?.let { context ->
-            PreferencesManager.read(DEACTIVATE_WIFI, false)?.let {
-                if (it) {
-                    WiFiActions(context).let { wifiActions ->
-                        if (wifiActions.isWiFiActive())
-                            wifiActions.turnOffWiFi()
-                    }
+        Log.i(TAG, "deactivating hardware")
+
+        CoroutineScope(Dispatchers.IO + Job()).launch {
+            if(preferences.willDeactivateWiFi())
+                wifi.apply {
+                    if(isWiFiActive())
+                        turnOffWiFi()
                 }
-            }
-            PreferencesManager.read(DEACTIVATE_BLUETOOTH, false)?.let {
-                if (it) {
-                    BluetoothActions(context).let { bluetoothActions ->
-                        if (bluetoothActions.isBluetoothEnabled())
-                            bluetoothActions.turnOffBluetooth()
-                    }
+            if(preferences.willDeactivateBluetooth())
+                bluetooth.apply {
+                    if(isBluetoothEnabled())
+                        turnOffBluetooth()
                 }
-            }
         }
     }
 
@@ -141,5 +153,8 @@ class TimerService : Service() {
                 context.stopService(it)
             }
         }
+
+        private const val TIMER_INIT_STRING = "00:00"
+        private const val TAG = "TimerService"
     }
 }

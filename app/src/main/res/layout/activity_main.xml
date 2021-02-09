@@ -22,6 +22,8 @@
         android:textColor="@android:color/white"
         android:textSize="48sp"
         android:textStyle="bold"
+        android:imeOptions="actionDone"
+        android:singleLine="true"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />

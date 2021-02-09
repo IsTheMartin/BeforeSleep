@@ -6,15 +6,18 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
 import android.text.InputFilter
+import android.util.Log
+import android.view.KeyEvent
 import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.CompoundButton
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.Observer
 import androidx.lifecycle.ViewModelProvider
-import kotlinx.android.synthetic.main.activity_main.*
-import me.ismartin.beforesleep.hardware.BluetoothActions
-import me.ismartin.beforesleep.hardware.WiFiActions
+import dagger.hilt.android.AndroidEntryPoint
+import me.ismartin.beforesleep.databinding.ActivityMainBinding
 import me.ismartin.beforesleep.services.TimerService
 import me.ismartin.beforesleep.utils.Constants.COUNT_DOWN_FINISHED_BROADCAST
 import me.ismartin.beforesleep.utils.Constants.COUNT_DOWN_TICK_BROADCAST
@@ -22,28 +25,29 @@ import me.ismartin.beforesleep.utils.Constants.MAX_TIMER_VALUE
 import me.ismartin.beforesleep.utils.Constants.MIN_TIMER_VALUE
 import me.ismartin.beforesleep.utils.Constants.TIMER_RUNNING
 import me.ismartin.beforesleep.utils.Constants.TIMER_STOPPED
-import me.ismartin.beforesleep.utils.HelperUtils
 import me.ismartin.beforesleep.utils.TimerUtils
 import me.ismartin.beforesleep.viewmodel.MainViewModel
 
-
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity(), View.OnClickListener,
     CompoundButton.OnCheckedChangeListener {
 
     private val TAG = "MainActivity"
     private lateinit var mainViewModel: MainViewModel
+    lateinit var binding: ActivityMainBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
         mainViewModel = ViewModelProvider(this).get(MainViewModel::class.java)
 
         registerViewModelObserver()
         setListeners()
 
         loadHardwareValuesFromPreferences()
-        verifyIfHardwareCanBeTurnedOff()
-        checkIfServiceIsRunning()
+        prepareUi()
+        mainViewModel.checkIfServiceIsRunning(this)
     }
 
     override fun onStart() {
@@ -67,19 +71,25 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
     }
 
     private fun registerViewModelObserver() {
-        mainViewModel.timeCountDown.observe(this, Observer<String> { t -> etTime.setText(t) })
-        mainViewModel.timerState.observe(this, Observer<String> { t -> updateUI(t) })
+        mainViewModel.timeCountDown.observe(this, { t -> binding.etTime.setText(t) })
+        mainViewModel.timerState.observe(this, { t -> updateUI(t) })
+        mainViewModel.isServiceRunning.observe(this, { t ->
+            if (t)
+                setUiOnRunningTimer()
+            else
+                setUiOnStoppedTimer()
+        })
     }
 
     private fun setListeners() {
-        btnActionTimer.setOnClickListener(this)
-        chkWiFi.setOnCheckedChangeListener(this)
-        chkBluetooth.setOnCheckedChangeListener(this)
+        binding.btnActionTimer.setOnClickListener(this)
+        binding.chkWiFi.setOnCheckedChangeListener(this)
+        binding.chkBluetooth.setOnCheckedChangeListener(this)
     }
 
     private fun startTimer() {
-        if (etTime.text.isNotEmpty()) {
-            val milliseconds = TimerUtils.convertStringToMillis(etTime.text.toString())
+        if (binding.etTime.text.isNotEmpty()) {
+            val milliseconds = TimerUtils.convertStringToMillis(binding.etTime.text.toString())
             if (milliseconds < MIN_TIMER_VALUE)
                 Toast.makeText(this, getString(R.string.min_time_message), Toast.LENGTH_SHORT)
                     .show()
@@ -88,7 +98,7 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
                     .show()
             else {
                 TimerService.start(this, milliseconds)
-                etTime.filters = arrayOf(InputFilter.LengthFilter(10))
+                binding.etTime.filters = arrayOf(InputFilter.LengthFilter(10))
             }
 
         } else {
@@ -124,8 +134,8 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
     override fun onClick(view: View?) {
         view?.let {
             when (it.id) {
-                btnActionTimer.id -> {
-                    if (btnActionTimer.text == getString(R.string.start_timer))
+                binding.btnActionTimer.id -> {
+                    if (binding.btnActionTimer.text == getString(R.string.start_timer))
                         startTimer()
                     else
                         stopTimer()
@@ -137,8 +147,9 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
     override fun onCheckedChanged(button: CompoundButton?, p1: Boolean) {
         button?.let {
             when (it.id) {
-                chkWiFi.id -> mainViewModel.turnOffWiFi(it.isChecked)
-                chkBluetooth.id -> mainViewModel.turnOffBluetooth(it.isChecked)
+                binding.chkWiFi.id -> mainViewModel.setDeactivateWiFiInPrefs(it.isChecked)
+                binding.chkBluetooth.id -> mainViewModel.setDeactivateBluetoothInPrefs(it.isChecked)
+                else -> Log.e(TAG, "id not recognized")
             }
         }
     }
@@ -152,45 +163,46 @@ class MainActivity : AppCompatActivity(), View.OnClickListener,
     }
 
     private fun setUiOnRunningTimer() {
-        btnActionTimer.text = getString(R.string.stop_timer)
-        etTime.isEnabled = false
+        binding.btnActionTimer.text = getString(R.string.stop_timer)
+        binding.etTime.isEnabled = false
+        binding.etTime.filters = arrayOf(InputFilter.LengthFilter(10))
     }
 
     private fun setUiOnStoppedTimer() {
-        btnActionTimer.text = getString(R.string.start_timer)
-        etTime.isEnabled = true
-        etTime.setText("")
-        etTime.filters = arrayOf(InputFilter.LengthFilter(3))
-    }
-
-    private fun verifyIfHardwareCanBeTurnedOff() {
-        MainApplication.appContext?.let {
-            if (!BluetoothActions(it).hasBluetooth()) {
-                chkBluetooth.isEnabled = false
-                chkBluetooth.isChecked = false
-            }
-            if (!WiFiActions(it).canTurnOffWiFi()) {
-                chkWiFi.isEnabled = false
-                chkWiFi.isChecked = false
-            }
+        binding.btnActionTimer.text = getString(R.string.start_timer)
+        binding.etTime.apply {
+            isEnabled = true
+            setText("")
+            filters = arrayOf(InputFilter.LengthFilter(3))
         }
     }
 
     private fun loadHardwareValuesFromPreferences() {
-        mainViewModel.isTurnOffWiFi()?.let {
-            chkWiFi.isChecked = it
-        }
-        mainViewModel.isTurnOffBluetooth()?.let {
-            chkBluetooth.isChecked = it
-        }
+        binding.chkWiFi.isChecked = mainViewModel.isDeactivatedWiFiFromPrefs()
+        binding.chkBluetooth.isChecked = mainViewModel.isTurnOffBluetooth()
     }
 
-    private fun checkIfServiceIsRunning() {
-        if (!HelperUtils.isMyServiceRunning(this, TimerService::class.java)) {
-            setUiOnStoppedTimer()
-        } else {
-            setUiOnRunningTimer()
-        }
+    private fun prepareUi() {
+        if (!mainViewModel.hasBluetooth())
+            binding.chkBluetooth.apply {
+                isEnabled = false
+                isChecked = false
+            }
+        if (!mainViewModel.canTurnOffWiFi())
+            binding.chkWiFi.apply {
+                isEnabled = false
+                isChecked = false
+            }
+        binding.etTime.setOnEditorActionListener(editorAction)
+        binding.etTime.requestFocus()
+        val inputMethodManager = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        inputMethodManager.toggleSoftInput(InputMethodManager.SHOW_FORCED, InputMethodManager.HIDE_IMPLICIT_ONLY)
+    }
+
+    private val editorAction = TextView.OnEditorActionListener { v, actionId, event ->
+        if (actionId == EditorInfo.IME_ACTION_DONE)
+            startTimer()
+        true
     }
 
 }
